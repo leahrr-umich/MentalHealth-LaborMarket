@@ -1,0 +1,276 @@
+*PROJECT: The causal effect of mental health on labor market outcomes: The case of stress-related mental disorders following a human-made disaster
+*CODE AUTHOR: Signe Hald Andersen
+*MANUSCRIPT AUTHORS: Signe Hald Andersen, Leah S. Richmond-Rakerd, Terrie E. Moffitt, Avshalom Caspi
+*NOTE: This Stata do-file generates all the data used for study-population and variable construction, by combining different administrative data sources. The file is the first of the two replication files for the project.
+
+
+*****************************************************************
+*******************generating base population*************************
+*****************************************************************
+
+forva x=2002/2006{
+use E:\Data\rawdata\705830\bef`x'
+keep pnr foed_dag koen kom /*keeps identifier, birthdate, gender and municipality code*/
+rename foed_dag foed_dag`x'
+rename koen koen`x'
+rename kom kom`x'
+save E:\Data\workdata\705830\zic\WP2_SP2\data\bef12_`x', replace
+}
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\bef12_2002
+
+forva x=2003/2006{
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\bef12_`x', nogen
+}
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\bef12_samlet, replace
+
+*******************************************************************************************
+*******************generating indicators for marital and immigration status****************
+*******************************************************************************************
+
+
+clear
+
+use E:\Data\rawdata\705830\bef12_2003.dta
+keep pnr ie_type familie_type /*keeps identifier, immigration status and family type*/
+gen indv=0
+replace indv=1 if ie_type==2
+gen gift=0
+replace gift=1 if inlist(familie_type,1,7,8)
+keep pnr indv gift 
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\bef_baggrund, replace
+
+*****************************************************************
+*******************generating education indicator****************
+*****************************************************************
+
+
+clear
+use E:\Data\rawdata\705830\uddany2003.dta 
+
+gen grund2=0
+replace grund2=1 if (hfpria_2003/12)<12 /*generates indicator of less than 12 years of education*/
+
+keep pnr grund2
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\udd_baggrund, replace
+
+
+*************************************************************
+*******************generating income indicator***************
+*************************************************************
+
+
+clear
+
+forva x=2002/2010{
+use E:\Data\rawdata\705830\indh`x'.dta
+save E:\Data\workdata\705830\zic\WP2_SP2\data\indkomst`x', replace
+}
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\indkomst2002
+forva x=2003/2010{
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\indkomst`x', nogen
+}
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\indkomst_samlet, replace
+
+
+****************************************************************************************************
+*******************generating indicators on early retirement pension and sickness benefits *********
+****************************************************************************************************
+
+
+
+clear 
+forva x=2002/2010{
+use E:\Data\rawdata\705830\dream`x'.dta
+rename y_01 y_1
+rename y_02 y_2
+rename y_03 y_3
+rename y_04 y_4
+rename y_05 y_5
+rename y_06 y_6
+rename y_07 y_7
+rename y_08 y_8
+rename y_09 y_9
+
+gen off_d`x'=0
+gen syg_d`x'=0
+
+forva y=1/52{
+replace off_d`x'=off_d`x'+1 if inrange(y_`y',750,783) /*generates indicator of early retirement pension*/
+replace syg_d`x'=syg_d`x'+1 if inrange(y_`y',890,899) /*generates indicator of sickness benefits*/
+}
+
+keep pnr off_d`x' syg_d`x' 
+keep if off_d`x'!=0|syg_d`x'!=0
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\dream`x', replace
+}
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\dream2002
+
+forva x=2003/2010{
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\dream`x', nogen
+}
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\dream_samlet, replace
+
+************************************************************************
+*******************generating indicators on unemployment ***************
+************************************************************************
+
+
+forva x=2002/2003{
+use E:\Data\rawdata\705830\idpe`x'.dta
+keep pnr arledgr`x' /*keeps identifier and yearly degree of unemployment*/
+save E:\Data\workdata\705830\zic\WP2_SP2\data\arledgr`x', replace
+}
+
+forva x=2004/2007{
+use E:\Data\rawdata\705830\idap`x'.dta
+keep pnr arledgr /*keeps identifier and yearly degree of unemployment*/
+rename arledgr arledgr`x'
+save E:\Data\workdata\705830\zic\WP2_SP2\data\arledgr`x', replace
+}
+
+forva x=2008/2010{
+use E:\Data\rawdata\705830\idap`x'.dta
+keep pnr arledgr_netto /*keeps identifier and yearly degree of unemployment*/
+bysort pnr: gen optal=_n
+keep if optal==1 /*keeps only one record pr individual*/
+rename arledgr_netto arledgr`x'
+save E:\Data\workdata\705830\zic\WP2_SP2\data\arledgr`x', replace
+}
+
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\arledgr2002
+
+forva x=2003/2010{
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\arledgr`x', nogen
+}
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\arledgr_samlet, replace
+
+
+************************************************************************************
+******************generating indicators on stress-related diagnoses*****************
+************************************************************************************
+
+
+clear 
+
+use E:\Data\workdata\705830\converted_rawdata\t_psyk_diag
+
+gen df=substr(C_DIAG,1,2)
+keep if df=="DF"
+gen df2=substr(C_DIAG,1,4)
+
+
+gen stress=0
+replace stress=1 if inlist(C_DIAG,"DF43","DF430","DF4300","DF4301","DF4302","DF431","DF438","DF439") /*stress*/
+gen angst=0
+replace angst=1 if inlist(C_DIAG,"DF40","DF400","DF4000","DF4001","DF401","DF402","DF402A") /*anxiety*/
+replace angst=1 if inlist(C_DIAG,"DF41","DF410","DF4100","DF4101","DF411") /*anxiety*/
+gen depression=0
+replace depression=1 if inlist(C_DIAG,"DF32","DF320","DF3200","DF3201","DF321","DF3210","DF3211","DF322") /*depression*/
+replace depression=1 if inlist(C_DIAG,"DF323","DF3230","DF3231","DF328","DF329","DF329A") /*depression*/
+keep recnum stress angst depression 
+keep if stress==1|angst==1|depression==1
+gen samlet=1
+
+bysort recnum: gen optal=_n
+tab optal
+keep if optal==1 /*keep only one record per hospitalization*/
+
+merge 1:1 recnum using E:\Data\workdata\705830\converted_rawdata\t_psyk_adm
+
+gen indaar=year(D_INDDTO)
+gen indmd=month(D_INDDTO)
+gen ind_md=(indaar-1995)*12+indmd /*generating monthly indicator of hospitalization, starting January 1995*/
+
+drop if ind_md<0
+
+bysort pnr ind_md: gen optal2=_n
+keep if optal2==1 /*keep only one record per month of hospitalization*/
+
+destring pnr, replace
+
+keep pnr samlet ind_md
+
+reshape wide samlet, i(pnr) j(ind_md)
+
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\samlet_diag, replace
+
+
+***********************************************************************************
+****************generating information on SSRI use in 2003 and 2005****************
+***********************************************************************************
+clear 
+
+use E:\Data\workdata\705830\converted_rawdata\lmdb2003_b
+gen ssri_med2003=0
+replace ssri_med2003=1 if atc4=="N06AB"
+keep if ssri_med2003==1
+bysort pnr: gen optal=_n
+keep if optal==1
+keep pnr ssri_med2003
+save E:\Data\workdata\705830\zic\WP2_SP2\data\ssri2003, replace
+
+use E:\Data\workdata\705830\converted_rawdata\lmdb2005_b
+gen ssri_med2005=0
+replace ssri_med2005=1 if atc4=="N06AB"
+keep if ssri_med2005==1
+bysort pnr: gen optal=_n
+keep if optal==1
+keep pnr ssri_med2005
+save E:\Data\workdata\705830\zic\WP2_SP2\data\ssri2005, replace
+
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\ssri2003
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\ssri_samlet, replace
+
+***********************************************************
+*************************merging data**********************
+***********************************************************
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\bef12_samlet
+
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\samlet_diag
+drop _merge
+
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\indkomst_samlet
+keep if _merge==1|_merge==3
+drop _merge
+
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\dream_samlet
+keep if _merge==1|_merge==3
+drop _merge
+
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\arledgr_samlet
+keep if _merge==1|_merge==3
+drop _merge
+
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\bef_baggrund
+keep if _merge==1|_merge==3
+drop _merge
+
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\udd_baggrund
+keep if _merge==1|_merge==3
+drop _merge
+
+merge 1:1 pnr using E:\Data\workdata\705830\zic\WP2_SP2\data\ssri_samlet
+keep if _merge==1|_merge==3
+drop _merge
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\stress_baggrund_outcome, replace
+
+
+
+
+
+

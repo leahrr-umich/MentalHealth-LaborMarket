@@ -1,0 +1,616 @@
+﻿*PROJECT: The causal effect of mental health on labor market outcomes: The case of stress-related mental disorders following a human-made disaster
+*CODE AUTHOR: Signe Hald Andersen
+*MANUSCRIPT AUTHORS: Signe Hald Andersen, Leah S. Richmond-Rakerd, Terrie E. Moffitt, Avshalom Caspi
+*NOTE: This Stata do-file age-limits the study population, constructs study variables, and runs the statistical analyses. This file is the second of the two replication files for the project.
+
+*********************************************************
+****************CONSTRUCTING VARIABLES ******************
+*********************************************************
+
+clear
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\stress_baggrund_outcome
+
+*calculates age in 2004
+gen alder2004=2004-year(foed_dag2004) 
+
+*replace monthly indicator of stress-related diagnoses with "0" if missing
+forval x=1/256{
+replace samlet`x'=0 if samlet`x'==. 
+}
+
+*generating yearly indicators of stress-related diagnoses
+forva x=2000/2010{
+local a=61+(`x'-2000)*12
+local b=`a'+1
+local c=`a'+2
+local d=`a'+3
+local e=`a'+4
+local f=`a'+5
+local g=`a'+6
+local h=`a'+7
+local i=`a'+8
+local j=`a'+9
+local k=`a'+10
+local l=`a'+11
+ 
+gen samlet_`x'=samlet`a'+samlet`b'+samlet`c'+samlet`d'+samlet`e'+samlet`f'+samlet`g'+samlet`h'+samlet`i'+samlet`j'+samlet`k'+samlet`l' 
+replace samlet_`x'=0 if samlet_`x'==.
+replace samlet_`x'=1 if samlet_`x'>1 & samlet_`x'!=.
+}
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\tilmatch, replace
+
+clear
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\tilmatch
+ 
+*delimiting the sample to only include individuals aged 25-50
+keep if alder2004>24
+keep if alder2004<51
+
+
+*specifying the municipalities of the impact area
+gen kolding=0
+replace kolding=1 if inlist(kom2004,509,621,623,629) & inlist(kom2005,509,621,623,629)
+
+
+****FINAL CODING OF OUTCOME VARIABLES AND LAGGED OUTCOME VARIABLES*****
+
+*setting income to 0 if there is no income, and dividing by 1,000 for ease of understanding
+forva x=2002/2010{
+replace brutto_`x'=(brutto_`x'/1000)
+}
+
+forva x=2002/2010{
+replace brutto_`x'=0 if brutto_`x'==.
+} 
+ 
+*recoding degree of unemployment to a binary indicator - >50% of the year
+forva x=2002/2010{
+gen bi_arledgr`x'=0
+}
+
+forva x=2002/2010{
+replace bi_arledgr`x'=1 if arledgr`x'>500 & arledgr`x'!=.
+}
+
+drop arledgr*
+rename bi_arledgr* arledgr* 
+
+*set sickness benefits and early retirement to zero if information is missing
+forva x=2002/2010{
+replace syg_d`x'=0 if syg_d`x'==.
+replace off_d`x'=0 if off_d`x'==.
+}
+ 
+****DEFINING THE ENDOGENOUS REGRESSOR - stress-related disorders diagnosed between November 2004 and October 2006****
+
+gen samlet=samlet119+samlet120+samlet121+samlet122+samlet123+samlet124+samlet125+samlet126+samlet127+samlet128+samlet129+samlet130+ ///
+samlet131+samlet132+samlet133+samlet134+samlet135+samlet136+samlet137+samlet138+samlet139+samlet140+samlet141+samlet142
+
+replace samlet=1 if samlet>1 /*binarize the indicator*/
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\tilmatch2, replace
+
+
+************************
+******MATCHING**********
+************************
+
+clear
+
+forva y=1/2{
+use E:\Data\workdata\705830\zic\WP2_SP2\data\tilmatch2
+
+*run matching separately by gender to enable exact matching on gender
+keep if koen2004==`y' 
+
+*1:1 nearest neighbor matching to create matched control group
+psmatch2 kolding off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2003 brutto_2002 ///
+alder2004 indv grund2 gift samlet_2002 samlet_2003 koen2004, outcome(brutto_2010) neighbor(1) noreplacement
+
+*testing the balance between impact area and control group
+pstest 
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\pscore_`y', replace
+
+drop _id
+*keeping only matched controls
+keep if _n1!=. 
+rename _n1 _id
+gen control=1
+keep _id control
+save E:\Data\workdata\705830\zic\WP2_SP2\data\controls_`y', replace 
+
+merge 1:1 _id using E:\Data\workdata\705830\zic\WP2_SP2\data\pscore_`y'
+keep if _treated==1|control==1
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022_`y', replace
+}
+
+*appending matched samples for men and women
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022_1
+append using E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022_2
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022, replace
+
+*******************************
+****DESCRIPTIVE STATISTICS*****
+*******************************
+
+clear
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022
+
+*Creating labels for Table 1
+label variable off_d2002 "Rehab./early retirem., 2002"
+label variable off_d2003 "Rehab./early retirem., 2003"
+label variable off_d2007 "Rehab./early retirem., 2007"
+label variable off_d2008 "Rehab./early retirem., 2008"
+label variable off_d2009 "Rehab./early retirem., 2009"
+label variable off_d2010 "Rehab./early retirem., 2010"
+
+label variable syg_d2002 "Sick leave, 2002"
+label variable syg_d2003 "Sick leave, 2003"
+label variable syg_d2007 "Sick leave, 2007"
+label variable syg_d2008 "Sick leave, 2008"
+label variable syg_d2009 "Sick leave, 2009"
+label variable syg_d2010 "Sick leave, 2010"
+
+label variable arledgr2002 "Unempl., 2002"
+label variable arledgr2003 "Unempl., 2003"
+label variable arledgr2007 "Unempl., 2007"
+label variable arledgr2008 "Unempl., 2008"
+label variable arledgr2009 "Unempl., 2009"
+label variable arledgr2010 "Unempl., 2010"
+
+label variable brutto_2002 "Gross income, 2002"
+label variable brutto_2003 "Gross income, 2003"
+label variable brutto_2007 "Gross income, 2007"
+label variable brutto_2008 "Gross income, 2008"
+label variable brutto_2009 "Gross income, 2009"
+label variable brutto_2010 "Gross income, 2010"
+
+label variable stress_aar2002 "Stress diag., 2002"
+label variable stress_aar2003 "Stress diag., 2003"
+label variable stress_aar2007 "Stress diag., 2007"
+label variable stress_aar2008 "Stress diag., 2008"
+label variable stress_aar2009 "Stress diag., 2009"
+label variable stress_aar2010 "Stress diag., 2010"
+
+label variable samlet_2002 "SDA diag., 2002"
+label variable samlet_2003 "SDA diag., 2003"
+
+label variable alder2004 "Age, 2004"
+label variable indv "Immigrant"
+label variable grund2 "Early school leaver"
+label variable gift "Married"
+
+label variable samlet "SDA diag., 1 & 2. year"
+
+label variable kolding "Impact area"
+
+*INPUT FOR TABLE 1
+
+*Descriptives, control group
+eststo first: quietly estpost summarize off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2002 brutto_2003 ///
+alder2004 indv grund2 gift koen2004 samlet_2002 samlet_2003 samlet  ///
+off_d2007 off_d2008 off_d2009 off_d2010 arledgr2007 arledgr2008 arledgr2009 arledgr2010 ///
+syg_d2007 syg_d2008 syg_d2009 syg_d2010 brutto_2007 brutto_2008 brutto_2009 brutto_2010 ///
+if kolding==0
+
+*Descriptives, impact area 
+eststo second: quietly estpost summarize off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2002 brutto_2003 ///
+alder2004 indv grund2 gift koen2004 samlet_2002 samlet_2003 samlet ///
+off_d2007 off_d2008 off_d2009 off_d2010  arledgr2007 arledgr2008 arledgr2009 arledgr2010 ///
+syg_d2007 syg_d2008 syg_d2009 syg_d2010 brutto_2007 brutto_2008 brutto_2009 brutto_2010 ///
+if kolding==1
+
+*Calculating t-tests for differences in means
+eststo diff: quietly estpost ttest off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2002 brutto_2003 ///
+alder2004 indv grund2 gift koen2004 samlet_2002 samlet_2003 samlet ///
+off_d2007 off_d2008 off_d2009 off_d2010  arledgr2007 arledgr2008 arledgr2009 arledgr2010 ///
+syg_d2007 syg_d2008 syg_d2009 syg_d2010 brutto_2007 brutto_2008 brutto_2009 brutto_2010, ///
+ by(kolding) unequal 
+
+ *creating table
+esttab first second diff using "E:\Data\workdata\705830\zic\WP2_SP2\balance_am.rtf", replace ///
+cells("mean(pattern(1 1 0) fmt(3)) ci(pattern(1 1 0) par) t(pattern(0 0 1) fmt(3))") label ///
+mtitles("Control group" "Impact area" "T-test for differences in means") nonumbers title("Descriptives, control and impact area")
+
+*calculating confidence intervals, covariates
+bysort kolding: ci mean off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2002 brutto_2003 ///
+alder2004 indv grund2 gift koen2004 samlet_2002 samlet_2003 samlet 
+
+*calculating confidence intervals, outcome variables
+bysort kolding: ci mean syg_d2007 syg_d2008 syg_d2009 syg_d2010 arledgr2007 arledgr2008 arledgr2009 arledgr2010 ///
+off_d2007 off_d2008 off_d2009 off_d2010 brutto_2007 brutto_2008 brutto_2009 brutto_2010
+
+
+
+clear
+use E:\Data\workdata\705830\zic\WP2_SP2\data\tilmatch2
+
+*creating labels for Table S1
+label variable off_d2002 "Rehab./early retirem., 2002"
+label variable off_d2003 "Rehab./early retirem., 2003"
+label variable off_d2007 "Rehab./early retirem., 2007"
+label variable off_d2008 "Rehab./early retirem., 2008"
+label variable off_d2009 "Rehab./early retirem., 2009"
+label variable off_d2010 "Rehab./early retirem., 2010"
+
+label variable syg_d2002 "Sick leave, 2002"
+label variable syg_d2003 "Sick leave, 2003"
+label variable syg_d2007 "Sick leave, 2007"
+label variable syg_d2008 "Sick leave, 2008"
+label variable syg_d2009 "Sick leave, 2009"
+label variable syg_d2010 "Sick leave, 2010"
+
+label variable arledgr2002 "Unempl., 2002"
+label variable arledgr2003 "Unempl., 2003"
+label variable arledgr2007 "Unempl., 2007"
+label variable arledgr2008 "Unempl., 2008"
+label variable arledgr2009 "Unempl., 2009"
+label variable arledgr2010 "Unempl., 2010"
+
+label variable brutto_2002 "Gross income, 2002"
+label variable brutto_2003 "Gross income, 2003"
+label variable brutto_2007 "Gross income, 2007"
+label variable brutto_2008 "Gross income, 2008"
+label variable brutto_2009 "Gross income, 2009"
+label variable brutto_2010 "Gross income, 2010"
+
+label variable stress_aar2002 "Stress diag., 2002"
+label variable stress_aar2003 "Stress diag., 2003"
+label variable stress_aar2007 "Stress diag., 2007"
+label variable stress_aar2008 "Stress diag., 2008"
+label variable stress_aar2009 "Stress diag., 2009"
+label variable stress_aar2010 "Stress diag., 2010"
+
+label variable samlet_2002 "SDA diag., 2002"
+label variable samlet_2003 "SDA diag., 2003"
+
+label variable alder2004 "Age, 2004"
+label variable indv "Immigrant"
+label variable grund2 "Early school leaver"
+label variable gift "Married"
+
+label variable samlet "SDA diag., 1 & 2. year"
+
+label variable kolding "Impact area"
+
+*INPUT FOR TABLE S1
+
+*Descriptives, working age Danes not residing in the impact area
+eststo first: quietly estpost summarize off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2002 brutto_2003 ///
+alder2004 indv grund2 gift samlet_2002 samlet_2003 samlet ///
+off_d2007 off_d2008 off_d2009 off_d2010 arledgr2007 arledgr2008 arledgr2009 arledgr2010 ///
+syg_d2007 syg_d2008 syg_d2009 syg_d2010 brutto_2007 brutto_2008 brutto_2009 brutto_2010 ///
+if kolding==0
+
+*Descriptives, impact area 
+eststo second: quietly estpost summarize off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2002 brutto_2003 ///
+alder2004 indv grund2 gift samlet_2002 samlet_2003 samlet ///
+off_d2007 off_d2008 off_d2009 off_d2010 arledgr2007 arledgr2008 arledgr2009 arledgr2010 ///
+syg_d2007 syg_d2008 syg_d2009 syg_d2010 brutto_2007 brutto_2008 brutto_2009 brutto_2010 ///
+if kolding==1
+
+*Calculating t-tests for differences in means
+eststo diff: quietly estpost ttest off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2002 brutto_2003 ///
+alder2004 indv grund2 gift samlet_2002 samlet_2003 samlet ///
+off_d2007 off_d2008 off_d2009 off_d2010 arledgr2007 arledgr2008 arledgr2009 arledgr2010 ///
+syg_d2007 syg_d2008 syg_d2009 syg_d2010 brutto_2007 brutto_2008 brutto_2009 brutto_2010, ///
+ by(kolding) unequal 
+
+*creating table
+esttab first second diff using "E:\Data\workdata\705830\zic\WP2_SP2\balance_bm.rtf", replace ///
+cells("mean(pattern(1 1 0) fmt(3)) sd(pattern(1 1 0) par) t(pattern(0 0 1) fmt(3))") label ///
+mtitles("Control group" "Impact area" "T-test for differences in means") nonumbers title("Descriptives, control and impact area")
+
+*calculating confidence intervals, covariates
+bysort kolding: ci mean off_d2002 off_d2003 arledgr2002 arledgr2003 syg_d2002 syg_d2003 brutto_2002 brutto_2003 ///
+alder2004 indv grund2 gift samlet_2002 samlet_2003 samlet 
+
+*calculating confidence intervals, outcome variables
+bysort kolding: ci mean off_d2007 off_d2008 off_d2009 off_d2010 arledgr2007 arledgr2008 arledgr2009 arledgr2010 ///
+syg_d2007 syg_d2008 syg_d2009 syg_d2010 brutto_2007 brutto_2008 brutto_2009 brutto_2010
+
+
+
+***************************************
+*********** MAIN ANALYSES***********
+***************************************
+
+FIGURE 2
+
+clear
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022
+
+
+*Running model, with weeks with sickness benefits in 2007-2010 as outcome
+matrix syg=J(4,3,.)
+local l=1
+forva x=2007/2010{
+ivreg syg_d`x' samlet_2002 samlet_2003 alder2004 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 indv grund2 gift koen2004 (samlet=kolding)
+matrix p=r(table)'
+matrix syg[`l',1]=p[1,1]
+matrix syg[`l',2]=p[1,5]
+matrix syg[`l',3]=p[1,6]
+local l=`l'+1
+}
+
+*Figure 2A: Plotting results
+coefplot (matrix(syg[,1]), ci((syg[,2] syg[,3]))), yti("LATE, weeks with sickness benefits") xti("Year") ///
+vertical yline(0) xlabel(1 "2007" 2 "2008" 3 "2009" 4 "2010") 
+graph export "E:\Data\workdata\705830\zic\WP2_SP2\graphs\sickness_all.png", replace
+
+*Running model, with unemployment>50% in 2007-2010 as outcome
+matrix arledgr=J(4,3,.)
+local l=1
+forva x=2007/2010{
+ivreg arledgr`x' samlet_2002 samlet_2003 alder2004 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 indv grund2 gift koen2004 (samlet=kolding)
+matrix p=r(table)'
+matrix arledgr[`l',1]=p[1,1]
+matrix arledgr[`l',2]=p[1,5]
+matrix arledgr[`l',3]=p[1,6]
+local l=`l'+1
+}
+
+*Figure 2B: Plotting results
+coefplot (matrix(arledgr[,1]), ci((arledgr[,2] arledgr[,3]))), yti("LATE, unemployed more than 50 pct. of the year") xti("Year") ///
+vertical yline(0) xlabel(1 "2007" 2 "2008" 3 "2009" 4 "2010") 
+graph export "E:\Data\workdata\705830\zic\WP2_SP2\graphs\unemployment_all.png", replace
+
+*Running model, with weeks with early retirement in 2007-2010 as outcome
+matrix off=J(4,3,.)
+local l=1
+forva x=2007/2010{
+ivreg off_d`x' samlet_2002 samlet_2003 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 alder2004 indv grund2 gift koen2004 (samlet=kolding)
+matrix p=r(table)'
+matrix off[`l',1]=p[1,1]
+matrix off[`l',2]=p[1,5]
+matrix off[`l',3]=p[1,6]
+local l=`l'+1
+}
+
+*Figure 2C: Plotting results
+coefplot (matrix(off[,1]), ci((off[,2] off[,3]))), yti("LATE, Weeks with early retirement pension") xti("Year") ///
+vertical yline(0) xlabel(1 "2007" 2 "2008" 3 "2009" 4 "2010") 
+graph export "E:\Data\workdata\705830\zic\WP2_SP2\graphs\rehab_dis_all.png", replace
+
+*Running model, with income in 2007-2010 as outcome
+matrix lon=J(4,3,.)
+local l=1
+forva x=2007/2010{
+ivreg brutto_`x' samlet_2002 samlet_2003 alder2004 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 indv grund2 gift koen2004 (samlet=kolding)
+matrix p=r(table)'
+matrix lon[`l',1]=p[1,1]
+matrix lon[`l',2]=p[1,5]
+matrix lon[`l',3]=p[1,6]
+local l=`l'+1
+}
+
+*Figure 2D: Plotting results
+coefplot (matrix(lon[,1]), ci((lon[,2] lon[,3]))), yti("LATE, Wage income in 1,000 DKK") xti("Year") ///
+vertical yline(0) xlabel(1 "2007" 2 "2008" 3 "2009" 4 "2010") 
+graph export "E:\Data\workdata\705830\zic\WP2_SP2\graphs\wage_all.png", replace
+
+
+
+***************************************************************************************************************
+*******************ANALYSES FOR TESTS OF ASSUMPTIONS, in order of appearance in the supplement***************
+***************************************************************************************************************
+
+*THE RELEVANCE ASSUMPTION
+
+clear
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022
+
+*Input for Figure S1
+
+eststo first: quietly estpost summarize samlet_2002 samlet_2003 samlet_2004 ///
+samlet_2005 samlet_2006 samlet_2007 samlet_2008 samlet_2009 samlet_2010 if kolding==0
+
+eststo second: quietly estpost summarize samlet_2002 samlet_2003 samlet_2004 ///
+samlet_2005 samlet_2006 samlet_2007 samlet_2008 samlet_2009 samlet_2010 if kolding==1
+
+eststo diff: quietly estpost ttest samlet_2002 samlet_2003 samlet_2004 ///
+samlet_2005 samlet_2006 samlet_2007 samlet_2008 samlet_2009 samlet_2010, by(kolding) unequal 
+
+esttab first second diff using "E:\Data\workdata\705830\zic\WP2_SP2\relevance2.xls", replace ///
+cells("mean(pattern(1 1 0) fmt(6)) sd(pattern(1 1 0) par) t(pattern(0 0 1) fmt(6))") label ///
+mtitles("Control group" "Impact area" "T-test for differences in means") nonumbers title("Descriptives, control and impact area")
+
+
+*Input for text: Running model with "first" option to get the F-test statistics for the relevance assumption
+
+ivreg2 brutto_2010 samlet_2002 samlet_2003 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 alder2004 indv grund2 gift koen2004 (samlet=kolding), first
+
+
+*Input for Figure S2
+
+clear
+use E:\Data\workdata\705830\zic\WP2_SP2\data\tilmatch2
+
+*identifying placebo municipalities
+ gen kommune_test=0
+ replace kommune_test=1 if kom2004==631 & kom2005==631 /*Vejle*/
+ replace kommune_test=2 if kom2004==515 & kom2005==515 /*Haderslev*/
+ replace kommune_test=3 if kom2004==615 & kom2005==615 /*Horsens*/
+ replace kommune_test=4 if kom2004==461 & kom2005==461 /*Odense*/
+ replace kommune_test=5 if kom2004==751 & kom2005==751 /*Aarhus*/
+ replace kommune_test=6 if kom2004==373 & kom2005==373 /*Næstved*/
+ replace kommune_test=7 if kom2004==731 & kom2005==731 /*Randers*/
+ replace kommune_test=8 if kom2004==265 & kom2005==265 /*Roskilde*/
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\tilmatch_placebo, replace
+
+
+forva x=1/8{
+clear
+forva y=1/2{
+clear
+
+*running matching procedure for each placebo municipality
+use E:\Data\workdata\705830\zic\WP2_SP2\data\tilmatch_placebo
+keep if koen2004==`y'
+
+gen kommune_test2=0
+replace kommune_test2=1 if kommune_test==`x'
+
+drop kommune_test
+rename kommune_test2 kommune_test
+ 
+psmatch2 kommune_test samlet_2003 samlet_2002 alder2004 arledgr2003 off_d2003 syg_d2003 brutto_2002 arledgr2002 off_d2002 syg_d2002 indv grund2 gift koen2004, outcome(brutto_2001) neighbor(1) noreplacement
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\pscore_placebo`x'_`y', replace
+
+drop _id
+keep if _n1!=.
+rename _n1 _id
+gen control=1
+keep _id control
+save E:\Data\workdata\705830\zic\WP2_SP2\data\controls_placebo`x'_`y', replace
+
+merge 1:1 _id using E:\Data\workdata\705830\zic\WP2_SP2\data\pscore_placebo`x'_`y'
+keep if _treated==1|control==1
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022_placebo`x'_`y', replace
+}
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022_placebo`x'_1
+append using E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022_placebo`x'_2
+
+save E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022_placebo`x', replace 
+}
+
+
+*running IV-model with each placebo municipality as instrument
+forva x=1/8{
+clear
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022_placebo`x'
+
+ivreg2 off_d2007 samlet_2003 samlet_2002 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 alder2004 indv grund2 gift koen2004 (samlet=kommune_test)
+matrix p_`x'=e(idstat)'
+}
+
+*matrix with F-test for relevance 
+matrix list p_1
+matrix list p_2
+matrix list p_3
+matrix list p_4
+matrix list p_5
+matrix list p_6
+matrix list p_7
+matrix list p_8
+
+
+*Input for Figure S3
+
+clear
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022
+
+*generating indicators of stress-related diagnoses prior to the disaster
+
+*running IV-models with stress-related disorders diagnosed prior to the disaster as endogeneous regressor
+forva x=2000/2003{
+ivreg2 off_d2007 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 alder2004 indv grund2 gift koen2004 (samlet__pre`x'=kolding), first
+matrix p_`x'=e(idstat)'
+}
+
+*matrix with F-test for relevance 
+matrix list p_2000
+matrix list p_2001
+matrix list p_2002
+matrix list p_2003
+
+*THE EXCLUSION RESTRICTION*
+
+*Input for text: Testing mobility patterns
+
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022
+
+*assessing extent of moves before and after the disaster
+gen flyt2003=0
+replace flyt2003=1 if kom2002!=kom2003
+gen flyt2006=0
+replace flyt2006=1 if kom2005!=kom2006
+bysort kolding: sum flyt2003 flyt2006
+
+*THE EXCHANGEABILITY ASSUMPTION*
+
+*Input for Figure S4
+
+clear
+use E:\Data\workdata\705830\zic\WP2_SP2\data\est_aug2022
+
+*T-test for difference in predictions between impact area and control group, disability pension as outcome
+matrix t_f=J(4,3,.)
+local l=1
+forva x=2007/2010{
+reg off_d`x' samlet_2003 samlet_2002 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 alder2004 indv grund2 gift koen2004 
+predict fitted_o`x'
+ttest fitted_o`x', by(kolding)
+matrix p=r(t)'
+matrix t_f[`l',1]=p[1,1]
+matrix drop p
+local l=`l'+1
+}
+
+*T-test for difference in predictions between impact area and control group, unemployment as outcome
+matrix t_f=J(4,3,.)
+local l=1
+forva x=2007/2010{
+reg arledgr`x' samlet_2003 samlet_2002 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 alder2004 indv grund2 gift koen2004
+predict fitted_a`x'
+ttest fitted_a`x', by(kolding)
+matrix p=r(t)'
+matrix t_f[`l',1]=p[1,1]
+matrix drop p
+local l=`l'+1
+}
+
+*T-test for difference in predictions between impact area and control group, sick leave benefits as outcome
+matrix t_f=J(4,3,.)
+local l=1
+forva x=2007/2010{
+reg syg_d`x' samlet_2002 samlet_2003 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 alder2004 indv grund2 gift koen2004
+predict fitted_s`x'
+ttest fitted_s`x', by(kolding)
+matrix p=r(t)'
+matrix t_f[`l',1]=p[1,1]
+matrix drop p
+local l=`l'+1
+}
+
+*T-test for difference in predictions between impact area and control group, income as outcome
+matrix t_f=J(4,3,.)
+local l=1
+forva x=2007/2010{
+reg brutto_`x' samlet_2002 samlet_2003 brutto_2003 brutto_2002 arledgr2003 arledgr2002 off_d2003 off_d2002 syg_d2003 syg_d2002 alder2004 indv grund2 gift koen2004
+predict fitted_b`x'
+ttest fitted_b`x', by(kolding)
+matrix p=r(t)'
+matrix t_f[`l',1]=p[1,1]
+matrix drop p
+local l=`l'+1
+}
+
+*THE MONOTONICITY ASSUMPTION 
+*Input for text: Testing differences in move out of SSRI use between 2003 and 2005
+
+gen mono=0
+replace mono=1 if sum2003==1 & sum2005==0
+ttest mono, by(kolding)
+
+
+
+
+
+
+
+
+
+
+
+
